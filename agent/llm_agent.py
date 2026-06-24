@@ -245,10 +245,14 @@ TOOLS = [
 # ── Agent builder ─────────────────────────────────────────────────────────────
 
 def build_agent(system_prompt: str):
-    """Build and return a LangGraph ReAct agent."""
+    """
+    Build and return a LangGraph ReAct agent with safeguards.
+    - max_iterations prevents infinite tool loops
+    - handle_parsing_errors prevents crashes on malformed LLM output
+    """
 
     llm = ChatGroq(
-        model=os.getenv("LLM_MODEL", "llama3-70b-8192"),
+        model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
         api_key=os.getenv("GROQ_API_KEY"),
         temperature=0,
     )
@@ -260,6 +264,40 @@ def build_agent(system_prompt: str):
     )
 
     return agent
+
+
+def run_with_safeguards(agent, messages: list, max_iterations: int = 10) -> str:
+    """
+    Run agent with explicit safeguards:
+    - Max iteration limit prevents infinite loops
+    - Exception handling prevents crashes
+    - Graceful fallback message on failure
+    """
+    try:
+        result = agent.invoke(
+            {"messages": messages},
+            config={"recursion_limit": max_iterations}
+        )
+        return result["messages"][-1].content
+
+    except Exception as e:
+        error_msg = str(e)
+
+        # Loop detection
+        if "recursion" in error_msg.lower() or "iteration" in error_msg.lower():
+            logger.error(f"LOOP DETECTED — agent exceeded {max_iterations} iterations")
+            return (
+                "I was unable to complete this request — it required too many "
+                "steps to resolve. This has been logged. Please contact a developer "
+                "with your plan name and material ID for manual investigation."
+            )
+
+        # General failure
+        logger.error(f"AGENT ERROR: {error_msg}")
+        return (
+            "I encountered an unexpected error processing your request. "
+            "Please try again or contact support if the issue persists."
+        )
 
 
 # ── Run with prompt variant ───────────────────────────────────────────────────
@@ -291,10 +329,8 @@ def run_llm_agent(
         messages.extend(chat_history)
     messages.append(HumanMessage(content=user_input))
 
-    result = agent.invoke({"messages": messages})
-
-    # Extract last AI message
-    response = result["messages"][-1].content
+    max_iter = int(os.getenv("MAX_ITERATIONS", 10))
+    response = run_with_safeguards(agent, messages, max_iter)
     logger.info(f"LLM AGENT RESPONSE: {response}")
     return response
 
