@@ -1,78 +1,85 @@
 Problem Framing Document
 Project: Retail Pricing Operations — AI Support Agent
 
-Version: 1.0
+Version: 1.1
 
 Author: Arikh Akher
 
 1. Business Context
-A B2B SaaS retail pricing platform serves enterprise customers including global fashion, home improvement, and specialty retail brands. The platform generates pricing plans across multiple regions (NA, LATAM, EU), seasons, and product catalogs — processing millions of price generations per run.
-Support teams receive a high volume of repetitive operational queries from two primary user types, typically resolved only after developer intervention and database investigation. The timezone gap between the support team and customers increases resolution time significantly.
+A B2B SaaS retail pricing platform serves enterprise customers including global fashion, home improvement, and specialty retail brands. The platform generates pricing plans across multiple dimensions — region, market, channel, product hierarchy, and season — processing hundreds of thousands of material-price combinations per run.
+When a pricing run completes, non-technical users have no self-service way to investigate why certain materials are missing from the output. Every investigation requires a developer to manually query the database and examine system logs. Timezone differences between the support team and customers add hours to resolution time.
 
 2. Primary User Personas
-Persona A — Pricing Analyst
+Persona A — Pricing Planner (Primary User)
 
-Creates pricing plans: selects materials, region, season, submits for generation
+Builds pricing plans by selecting: Region, Market, Channel, Product Hierarchy, Season, and Materials
+Submits the plan for price generation
+Reviews output in the UI — all generated materials and prices are shown with green indicators
 Non-technical. Cannot query databases or read system logs
-Pain: Does not know if all selected materials were priced correctly after a run
-Urgency: Occasionally needs answers during a live run. Frequently needs answers post-run before downstream systems consume the prices
+Core pain: Selected materials silently disappear from output. Planner notices the count is wrong — expected 500 materials, sees 487. Has no way to find out why 13 are missing without calling a developer
+Urgency: Moderate to high — missing materials block plan approval and downstream pricing cycles
 
-Persona B — Pricing Manager
+Persona B — Pricing Manager (Secondary User)
 
-Reviews and approves generated pricing plans
-Non-technical. Relies entirely on what the system surface shows them
-Pain: Cannot approve a plan with confidence if they suspect missing or incorrect prices
-Urgency: Approval blockers delay downstream client systems — ERP, ecommerce, wholesale platforms
+Reviews and approves completed pricing plans
+Relies on what the UI surface shows
+Core pain: Cannot approve a plan with confidence if material counts look wrong or incomplete
+Urgency: Approval blockers delay dependent systems — ERP, ecommerce, wholesale platforms
 
 
 3. Problem Statement
-When a pricing run completes, analysts and managers have no self-service way to verify:
+When a pricing run completes, materials can silently disappear from the output for two distinct reasons:
+Reason 1 — Rule Mismatch
 
-Whether all selected materials were priced
-Whether prices were successfully downstreamed to client systems
-Whether specific materials were correctly assigned to the expected season
+The price generation engine evaluates each material against pricing rules before generating a price. If a material fails a rule, it is silently skipped — no error, no notification. Example: a material has a 3-month expiry date but the plan is generating prices for a 6-month horizon. The rule rejects it silently.
+Reason 2 — Master Data Gap
 
-Current resolution path requires emailing a developer, who manually queries the database, checks Cloud Function logs, and investigates Pub/Sub pipeline failures. With timezone differences, this adds hours to resolution time — during which downstream systems may be blocked or receiving incomplete data.
-The agent solves this by giving non-technical users direct, accurate, database-grounded answers to operational pricing questions — without developer involvement.
+A planner selects a Region, Market, Channel, and Product Hierarchy combination. But the material does not exist in the master data at that specific intersection. The planner believes they added it correctly. The system finds no matching record at that combination and silently skips it.
+These two root causes require completely different corrective actions:
+Root CauseWho ActsWhat They DoRule mismatchPricing PlannerAdjusts plan parameters or material selectionMaster data gapMaster Data TeamFixes the material mapping in master data
+Currently, distinguishing between these two causes requires a developer to query the database and grep Cloud Function logs by material ID — a process that takes hours and requires timezone coordination.
+The agent solves this by giving planners and managers a direct, accurate, self-service answer to: "Why is this material missing?" — without developer involvement.
 
 4. Workflow The Agent Supports
 Pricing run completes
         ↓
-Analyst / Manager has a question about plan status
+Planner reviews UI — notices material count mismatch
         ↓
 Opens agent chat → asks in natural language
         ↓
 Agent identifies question type:
-  ├── Price generation status  → queries price status field in DB
-  ├── Downstream status        → queries downstream status field in DB
-  └── Season / material check  → queries plan-material mapping in DB
+  ├── Missing material query → checks rule evaluation status
+  ├── Root cause triage     → rule mismatch vs master data gap
+  └── Plan completeness     → how many materials priced vs selected
         ↓
-Agent returns accurate, sourced answer
+Agent returns accurate, sourced answer with root cause
         ↓
-If system anomaly detected → escalates to developer with context
+If system failure detected (not rule, not data) → escalates to 
+developer with structured context (plan name, material ID, error type)
 
 5. Inputs, Outputs, Constraints
-DetailInputsNatural language question, plan name, material ID, region, seasonOutputsAccurate status answer grounded in DB query resultData sourcesSimulated pricing database (SQLite for this build)ConstraintsAgent must never answer from assumption — only from queried dataOut of scopeAgent cannot modify plans, trigger runs, or approve prices
+DetailInputsNatural language question, plan name, material ID, region, market, channel, seasonOutputsAccurate root cause answer grounded in simulated DB query resultData sourcesSimulated pricing database (SQLite for this build)ConstraintsAgent must never answer from assumption — only from queried dataOut of scopeAgent cannot modify plans, trigger runs, approve prices, or fix master data
 
 6. Example User Questions
 
-"Has plan SUMMER_NA_2024 completed price generation for all materials?"
-"Material ID M-4521 was selected in plan FALL_EU_2024 — was it priced?"
-"Did the prices for plan SPRING_LATAM_2024 downstream to the client system?"
-"Which materials in plan WINTER_NA_2024 are missing prices?"
-"Is material M-3301 assigned to Season A or Season B in the current plan?"
+"I selected 500 materials in plan SUMMER_LATAM_V2 but only 487 are showing. Where are the missing 13?"
+"Material M-4521 was selected in plan FALL_EU_2024 but it's not in the output. Why?"
+"Is material M-3301 missing because of a rule problem or a data problem?"
+"Which materials in plan WINTER_NA_2024 failed price generation and why?"
+"Plan SPRING_LATAM_2024 is showing fewer materials than I selected. Can you check?"
 
 
 7. Success Criteria
-MetricTargetCorrect status answer rate≥ 90% on evaluation test setHallucination rate0% — agent must not answer without querying DBCorrect tool selection≥ 95% — right tool called for right question typeEscalation accuracy100% — system issues always escalated, never silently droppedPII / sensitive data in logs0 — plan names and material IDs logged, no customer pricing data
+MetricTargetCorrect root cause identification≥ 90% on evaluation test setHallucination rate0% — agent never answers without querying dataCorrect tool selection≥ 95% — right tool for right question typeEscalation accuracy100% — system failures always escalated, never droppedRule mismatch vs data gap distinction≥ 90% correct classificationSensitive data in logs0% — no pricing values written to logs
 
 8. Known Failure Cases & Edge Scenarios
-Failure CaseExpected Agent BehaviourMaterial exists in DB but price generation failedReport exact status, do not say "price generated"Plan name entered incorrectly by userAsk for clarification, do not guessDownstream status field is NULLReport as "status unknown", escalateUser asks agent to approve or modify a planRefuse clearly, explain agent is read-onlyUser asks why a price was not generatedAgent reports status, escalates root cause to developerSystem anomaly detected (missing records, unexpected NULLs)Escalate with context, never fabricate an answer
+Failure CaseExpected Agent BehaviourMaterial missing due to rule mismatchReport exact rule that failed, advise planner to adjust planMaterial missing due to master data gapReport mapping does not exist, advise contacting master data teamPlan name entered incorrectlyAsk for clarification, do not guess or assumeMaterial ID does not exist in systemReport clearly, do not fabricate a statusRoot cause is a system failure not rule or dataEscalate to developer with plan name, material ID, and anomaly descriptionUser asks agent to fix the master dataRefuse clearly, agent is read-onlyUser asks agent to re-run price generationRefuse clearly, agent cannot trigger system actionsStatus field returns NULL or unexpected valueReport as unknown, escalate — never guess
 
 9. Safety Requirements
 
-Read-only: Agent never modifies any data
-Grounded answers only: Every answer sourced from a DB query result
-Explicit uncertainty: If data is missing or ambiguous, agent says so clearly
-Escalation path: System issues trigger escalation tool with structured context
-PII-safe logging: No customer pricing values written to logs
+Read-only: Agent never modifies any data under any circumstance
+Grounded answers only: Every answer sourced from a simulated DB query — never from LLM inference alone
+Explicit uncertainty: If data is missing, ambiguous, or NULL — agent states this clearly
+Escalation path: System anomalies trigger escalation tool with structured context
+No fabrication: Agent never invents a reason for a missing material
+PII-safe logging: No pricing values, customer names, or commercial data written to logs
