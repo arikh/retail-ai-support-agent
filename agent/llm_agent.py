@@ -1,0 +1,320 @@
+"""
+Phase 3: LangChain + Groq powered agent using LangGraph.
+Replaces brittle keyword matching with LLM-based understanding.
+Compatible with LangChain 1.x / LangGraph.
+"""
+import sys
+import sqlite3
+import logging
+import os
+from dotenv import load_dotenv
+from langchain_groq import ChatGroq
+from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langgraph.prebuilt import create_react_agent
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from agent.prompts.system_prompt import (
+    DEFAULT_PROMPT,
+    PROMPT_V1_MINIMAL,
+    PROMPT_V2_STRUCTURED,
+)
+
+
+load_dotenv()
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+logger = logging.getLogger(__name__)
+
+# ── Database helper ───────────────────────────────────────────────────────────
+
+DATABASE_PATH = "data/pricing.db"
+
+
+def query_db(sql: str, params: tuple = ()) -> list[dict]:
+    """Execute a read-only query and return results as list of dicts."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
+
+@tool
+def get_plan_status(plan_name: str) -> str:
+    """
+    Get the overall status of a pricing plan including how many
+    materials were priced vs total selected.
+    Use this when user asks about plan completeness or status.
+    """
+    rows = query_db("""
+        SELECT plan_name, region, market, channel, season,
+               status, total_materials, priced_materials
+        FROM pricing_plans
+        WHERE plan_name = ?
+    """, (plan_name,))
+
+    if not rows:
+        return f"Plan '{plan_name}' not found. Please verify the plan name."
+
+    r = rows[0]
+    missing = r["total_materials"] - r["priced_materials"]
+    return (
+        f"Plan: {r['plan_name']} | Region: {r['region']} | "
+        f"Market: {r['market']} | Channel: {r['channel']} | "
+        f"Season: {r['season']} | Status: {r['status']} | "
+        f"Materials priced: {r['priced_materials']}/{r['total_materials']} | "
+        f"Missing: {missing}"
+    )
+
+
+@tool
+def get_missing_materials(plan_name: str) -> str:
+    """
+    Get all materials that were selected in a plan but were NOT priced,
+    along with the rejection reason for each.
+    Use this when user asks why materials are missing or not showing up.
+    """
+    rows = query_db("""
+        SELECT pm.material_id, m.material_name,
+               pm.rejection_reason, m.expiry_months
+        FROM plan_materials pm
+        JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
+        JOIN materials m ON pm.material_id = m.material_id
+        WHERE pp.plan_name = ?
+        AND pm.price_status = 'NOT_PRICED'
+    """, (plan_name,))
+
+    if not rows:
+        return f"No missing materials found for plan '{plan_name}'."
+
+    result = f"Missing materials in '{plan_name}':\n"
+    for r in rows:
+        result += (
+            f"- {r['material_id']} ({r['material_name']}) | "
+            f"Reason: {r['rejection_reason']} | "
+            f"Expiry: {r['expiry_months']} months\n"
+        )
+    return result
+
+
+@tool
+def get_downstream_status(plan_name: str) -> str:
+    """
+    Get the downstream propagation status for all priced materials in a plan.
+    Use this when user asks if prices were sent to client systems or downstreamed.
+    """
+    rows = query_db("""
+        SELECT pm.material_id, m.material_name, pm.downstream_status
+        FROM plan_materials pm
+        JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
+        JOIN materials m ON pm.material_id = m.material_id
+        WHERE pp.plan_name = ?
+        AND pm.price_status = 'PRICED'
+    """, (plan_name,))
+
+    if not rows:
+        return f"No priced materials found for plan '{plan_name}'."
+
+    failed  = [r for r in rows if r["downstream_status"] == "FAILED"]
+    pending = [r for r in rows if r["downstream_status"] == "PENDING"]
+    success = [r for r in rows if r["downstream_status"] == "DOWNSTREAMED"]
+
+    result = (
+        f"Downstream status for '{plan_name}':\n"
+        f"Downstreamed: {len(success)} | "
+        f"Pending: {len(pending)} | "
+        f"Failed: {len(failed)}\n"
+    )
+
+    if failed:
+        result += "Failed materials:\n"
+        for r in failed:
+            result += f"- {r['material_id']} ({r['material_name']})\n"
+
+    return result
+
+
+@tool
+def get_material_rejection_reason(material_id: str, plan_name: str = "") -> str:
+    """
+    Get the rejection reason for a specific material in a plan.
+    Use this when user asks why a specific material was not priced
+    or what rule caused a material to be excluded.
+    """
+    if plan_name:
+        rows = query_db("""
+            SELECT pm.material_id, m.material_name,
+                   pm.price_status, pm.rejection_reason,
+                   m.expiry_months, pp.plan_name
+            FROM plan_materials pm
+            JOIN materials m ON pm.material_id = m.material_id
+            JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
+            WHERE pm.material_id = ? AND pp.plan_name = ?
+        """, (material_id, plan_name))
+    else:
+        rows = query_db("""
+            SELECT pm.material_id, m.material_name,
+                   pm.price_status, pm.rejection_reason,
+                   m.expiry_months, pp.plan_name
+            FROM plan_materials pm
+            JOIN materials m ON pm.material_id = m.material_id
+            JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
+            WHERE pm.material_id = ?
+        """, (material_id,))
+
+    if not rows:
+        return f"Material '{material_id}' not found."
+
+    r = rows[0]
+    if r["price_status"] == "PRICED":
+        return (
+            f"Material {material_id} ({r['material_name']}) was successfully "
+            f"priced in plan '{r['plan_name']}'."
+        )
+
+    return (
+        f"Material {material_id} ({r['material_name']}) was NOT priced.\n"
+        f"Plan: {r['plan_name']} | "
+        f"Reason: {r['rejection_reason']} | "
+        f"Expiry: {r['expiry_months']} months"
+    )
+
+
+@tool
+def escalate_to_developer(
+    plan_name: str,
+    material_id: str,
+    issue_description: str
+) -> str:
+    """
+    Escalate an unresolved issue to a developer.
+    Use this when root cause is unknown, data is inconsistent,
+    or a system anomaly is detected.
+    """
+    logger.warning(
+        f"ESCALATION TRIGGERED | "
+        f"Plan: {plan_name} | "
+        f"Material: {material_id} | "
+        f"Issue: {issue_description}"
+    )
+    return (
+        f"Escalation logged for developer review.\n"
+        f"Plan: {plan_name} | Material: {material_id}\n"
+        f"Issue: {issue_description}\n"
+        f"A developer will investigate the system logs and database records."
+    )
+
+
+# ── Tools list ────────────────────────────────────────────────────────────────
+
+TOOLS = [
+    get_plan_status,
+    get_missing_materials,
+    get_downstream_status,
+    get_material_rejection_reason,
+    escalate_to_developer,
+]
+
+
+# ── Agent builder ─────────────────────────────────────────────────────────────
+
+def build_agent(system_prompt: str):
+    """Build and return a LangGraph ReAct agent."""
+
+    llm = ChatGroq(
+        model=os.getenv("LLM_MODEL", "llama3-70b-8192"),
+        api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0,
+    )
+
+    agent = create_react_agent(
+        model=llm,
+        tools=TOOLS,
+        prompt=system_prompt,
+    )
+
+    return agent
+
+
+# ── Run with prompt variant ───────────────────────────────────────────────────
+
+def run_llm_agent(
+    user_input: str,
+    prompt_variant: str = "v3",
+    chat_history: list = None
+) -> str:
+    """
+    Run the LLM agent with a specific prompt variant.
+    Used for Phase 3 prompt comparison.
+    """
+    prompt_map = {
+        "v1": PROMPT_V1_MINIMAL,
+        "v2": PROMPT_V2_STRUCTURED,
+        "v3": DEFAULT_PROMPT,
+    }
+
+    system_prompt = prompt_map.get(prompt_variant, DEFAULT_PROMPT)
+    agent = build_agent(system_prompt)
+
+    logger.info(
+        f"LLM AGENT | Prompt: {prompt_variant} | Input: {user_input}"
+    )
+
+    messages = []
+    if chat_history:
+        messages.extend(chat_history)
+    messages.append(HumanMessage(content=user_input))
+
+    result = agent.invoke({"messages": messages})
+
+    # Extract last AI message
+    response = result["messages"][-1].content
+    logger.info(f"LLM AGENT RESPONSE: {response}")
+    return response
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main():
+    """Interactive CLI for Phase 3 LLM agent."""
+    print("=" * 60)
+    print("  Retail Pricing Operations — AI Support Agent")
+    print("  Phase 3: LangChain + Groq LLM Agent")
+    print("=" * 60)
+    print("Commands: type 'v1', 'v2', 'v3' to switch prompt variant")
+    print("Type 'quit' to exit\n")
+
+    current_variant = "v3"
+    print(f"Active prompt variant: {current_variant}\n")
+
+    while True:
+        user_input = input("You: ").strip()
+
+        if not user_input:
+            continue
+
+        if user_input.lower() in ["quit", "exit", "q"]:
+            print("Goodbye.")
+            break
+
+        if user_input.lower() in ["v1", "v2", "v3"]:
+            current_variant = user_input.lower()
+            print(f"Switched to prompt variant: {current_variant}\n")
+            continue
+
+        response = run_llm_agent(user_input, current_variant)
+        print(f"\nAgent: {response}\n")
+        print("-" * 60)
+
+
+if __name__ == "__main__":
+    main()
