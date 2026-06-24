@@ -6,3 +6,5 @@ __pycache__/
 chroma_db/
 *.egg-info/
 .venv/
+data/pricing.db
+data/__pycache__/
