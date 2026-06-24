@@ -213,6 +213,22 @@ def escalate_to_developer(
         f"A developer will investigate the system logs and database records."
     )
 
+@tool
+def search_knowledge_base(query: str) -> str:
+    """
+    Search the pricing operations knowledge base for policy information,
+    rule explanations, and resolution guidance.
+    Use this when user asks about what a rule means, how to fix an issue,
+    or what a status means. Do NOT use for live plan or material data.
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from rag.retriever import retrieve_as_text
+
+    result = retrieve_as_text(query)
+    logger.info(f"RAG retrieved context for query: {query}")
+    return result
 
 # ── Tools list ────────────────────────────────────────────────────────────────
 
@@ -222,6 +238,7 @@ TOOLS = [
     get_downstream_status,
     get_material_rejection_reason,
     escalate_to_developer,
+    search_knowledge_base,
 ]
 
 
