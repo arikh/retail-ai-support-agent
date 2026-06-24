@@ -309,7 +309,7 @@ def run_llm_agent(
 ) -> str:
     """
     Run the LLM agent with a specific prompt variant.
-    Used for Phase 3 prompt comparison.
+    Accepts optional chat history for multi-turn conversations.
     """
     prompt_map = {
         "v1": PROMPT_V1_MINIMAL,
@@ -318,7 +318,7 @@ def run_llm_agent(
     }
 
     system_prompt = prompt_map.get(prompt_variant, DEFAULT_PROMPT)
-    agent = build_agent(system_prompt)
+    agent         = build_agent(system_prompt)
 
     logger.info(
         f"LLM AGENT | Prompt: {prompt_variant} | Input: {user_input}"
@@ -329,7 +329,7 @@ def run_llm_agent(
         messages.extend(chat_history)
     messages.append(HumanMessage(content=user_input))
 
-    max_iter = int(os.getenv("MAX_ITERATIONS", 10))
+    max_iter = int(os.getenv("MAX_ITERATIONS", 15))
     response = run_with_safeguards(agent, messages, max_iter)
     logger.info(f"LLM AGENT RESPONSE: {response}")
     return response
@@ -338,15 +338,29 @@ def run_llm_agent(
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
-    """Interactive CLI for Phase 3 LLM agent."""
+    """
+    Interactive CLI with session memory.
+    Demonstrates multi-turn conversation capability.
+    """
+    import uuid
+    from agent.memory.session_memory import SessionMemory
+
     print("=" * 60)
     print("  Retail Pricing Operations — AI Support Agent")
-    print("  Phase 3: LangChain + Groq LLM Agent")
+    print("  Phase 6: Memory + Multi-turn Conversations")
     print("=" * 60)
-    print("Commands: type 'v1', 'v2', 'v3' to switch prompt variant")
-    print("Type 'quit' to exit\n")
+    print("Commands:")
+    print("  'v1', 'v2', 'v3'  — switch prompt variant")
+    print("  'clear'           — clear session memory")
+    print("  'memory'          — show memory state")
+    print("  'quit'            — exit")
+    print()
 
+    session_id      = str(uuid.uuid4())[:8]
+    memory          = SessionMemory(session_id=session_id)
     current_variant = "v3"
+
+    print(f"Session ID: {session_id}")
     print(f"Active prompt variant: {current_variant}\n")
 
     while True:
@@ -357,6 +371,7 @@ def main():
 
         if user_input.lower() in ["quit", "exit", "q"]:
             print("Goodbye.")
+            logger.info(f"Session {session_id} ended by user.")
             break
 
         if user_input.lower() in ["v1", "v2", "v3"]:
@@ -364,7 +379,41 @@ def main():
             print(f"Switched to prompt variant: {current_variant}\n")
             continue
 
-        response = run_llm_agent(user_input, current_variant)
+        if user_input.lower() == "clear":
+            memory.clear_session()
+            print("Session memory cleared.\n")
+            continue
+
+        if user_input.lower() == "memory":
+            print(f"Memory state: {memory.get_memory_summary()}\n")
+            continue
+
+        # Add user message to memory
+        memory.add_user_message(user_input)
+
+        # Run agent with limited history — last 2 turns only
+        # Prevents loop from re-investigating previous tool results
+        history = memory.get_history()[:-1]
+        recent_history = history[-4:] if len(history) > 4 else history
+
+        response = run_llm_agent(
+            user_input     = user_input,
+            prompt_variant = current_variant,
+            chat_history   = recent_history,
+        )
+
+        # Add agent response to memory
+        memory.add_ai_message(response)
+
+        # Store key entities in long-term memory
+        import re
+        plan_match     = re.search(r'\b([A-Z][A-Z0-9_]{5,})\b', user_input)
+        material_match = re.search(r'\bM-\d{4}\b', user_input)
+        if plan_match:
+            memory.remember("last_plan", plan_match.group())
+        if material_match:
+            memory.remember("last_material", material_match.group())
+
         print(f"\nAgent: {response}\n")
         print("-" * 60)
 
