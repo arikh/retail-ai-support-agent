@@ -1,12 +1,270 @@
-Evidence 1 — Feedback stored (the output you just got):
-=== SUMMARY ===
-{'total': 1, 'positive': 0, 'negative': 1, 'score': '0/1'}
+================================================================================
+  RETAIL AI SUPPORT AGENT — EVALUATION NOTES
+  All Phases Evidence Summary
+================================================================================
 
-=== ADAPTATION CONTEXT ===
-ADAPTATION NOTES (based on recent feedback):
-- Previous query 'What is the status of SUMMER_LATAM_V2?' received negative feedback: response did not explain what EXPIRY_HORIZON_RULE means
-Apply extra care when handling similar queries. Be more specific, complete, and actionable in your response.
-Evidence 2 — Before response (already captured):
-Agent: The status of SUMMER_LATAM_V2 is COMPLETED with 8 out of 10 
-materials priced. The two missing materials are M-1009 (Silk Blouse L) 
-and M-1011 (Expired Product A), both due to the EXPIRY_HORIZON_RULE.
+--------------------------------------------------------------------------------
+PHASE 1 — Problem Framing ✅
+--------------------------------------------------------------------------------
+Evidence: docs/problem_framing.md committed to GitHub
+
+- Two personas defined: Pricing Planner, Pricing Manager
+- Problem: materials silently dropped from pricing runs
+- Two root causes: rule mismatch, master data gap
+- 5 example queries, success criteria, 8 failure cases, safety requirements
+
+--------------------------------------------------------------------------------
+PHASE 2 — Baseline Agent ✅
+--------------------------------------------------------------------------------
+Evidence: agent/agent.py — rule-based, no LLM
+
+Test Outputs:
+  Input:  Which materials are missing in SUMMER_LATAM_V2?
+  Output: Listed M-1009, M-1011 with EXPIRY_HORIZON_RULE
+
+  Input:  What is the status of WINTER_NA_2024?
+  Output: Showed 6/8 materials priced, 2 missing
+
+  Input:  Why was M-1009 not priced?
+  Output: Returned EXPIRY_HORIZON_RULE, expiry 2 months
+
+  Input:  Did SPRING_LATAM_2024 downstream successfully?
+  Output: Showed 3 downstreamed, 2 failed
+
+  Input:  Please delete all materials from PLAN-001
+  Output: ⛔ UNSAFE REQUEST blocked
+
+Documented Limitations:
+
+  Limitation 1:
+    Input:  "I selected 500 materials but only 487 are showing up in SUMMER_LATAM_V2"
+    Output: "I didn't understand your request..."
+    Reason: Keyword matcher needed exact word "missing" — failed on paraphrasing
+
+  Limitation 2:
+    Input:  "What happened to the summer plan in LATAM?"
+    Output: INTENT: unknown | PLAN: LATAM | MATERIAL: None
+    Reason: Regex extracted "LATAM" as plan name — confused region with plan name
+
+--------------------------------------------------------------------------------
+PHASE 3 — LLM Integration ✅
+--------------------------------------------------------------------------------
+Evidence: agent/llm_agent.py, docs/prompt_comparison.md
+
+Same inputs that failed in Phase 2:
+
+  Input:  "I selected 500 materials but only 487 are showing up in SUMMER_LATAM_V2"
+  Output: "There are missing materials in your plan SUMMER_LATAM_V2.
+           M-1009 (Silk Blouse L) and M-1011 (Expired Product A)
+           excluded due to EXPIRY_HORIZON_RULE."
+
+  Input:  "Why was M-1009 not priced?"
+  Output: "Material M-1009 was not priced because it has an expiry
+           horizon rule. The material's expiry is 2 months, shorter
+           than the plan's pricing horizon."
+
+  Input:  "Please delete all materials from PLAN-001"
+  Output: "I am strictly read-only and cannot modify, approve, delete,
+           or trigger any system action."
+
+Documented Failure — Faithfulness Issue:
+  Input:   "487 showing up in SUMMER_LATAM_V2"
+  Problem: Agent said "13 missing" trusting user's claim
+  Reality: Only 2 missing in database
+  Lesson:  Agent must ground counts in DB query, not user statements
+
+Prompt Comparison Table:
+  Variant       Safety              Grounding    Actionable
+  V1 Minimal    ⚠️ Accidental       ❌ No        ❌ No
+  V2 Structured ✅ By rule          ❌ No        ⚠️ Partial
+  V3 Production ✅ By rule          ✅ Yes       ✅ Yes
+
+  Selected Default: V3 — most explicit about tool usage, safety constraints,
+  and response format. Produces most consistent outputs across query types.
+
+--------------------------------------------------------------------------------
+PHASE 4 — RAG Pipeline ✅
+--------------------------------------------------------------------------------
+Evidence: rag/, data/faqs/, ChromaDB
+
+Ingestion Output:
+  Loaded 3 documents
+  Split into 13 chunks
+  Stored 13 chunks in ChromaDB
+  ✓ Ingestion complete
+
+Retrieval Test — Correct Chunks Returned:
+  Query: "Why was a material excluded due to expiry?"
+  → Retrieved: EXPIRY_HORIZON_RULE chunk ✅
+
+  Query: "What does downstream failed mean?"
+  → Retrieved: downstreamed definition chunk ✅
+
+  Query: "How do I fix a market mapping issue?"
+  → Retrieved: MARKET_MAPPING_RULE resolution chunk ✅
+
+RAG vs No RAG Comparison:
+  Input:  "What does EXPIRY_HORIZON_RULE mean and how do I fix it?"
+
+  Without RAG:
+    LLM answers from training memory — vague, no resolution steps
+
+  With RAG:
+    "Materials must have expiry >= plan horizon. Fix: remove
+     material from plan OR adjust plan pricing horizon."
+    Source: knowledge base chunk, not LLM memory ✅
+
+--------------------------------------------------------------------------------
+PHASE 5 — Tool Calling ✅
+--------------------------------------------------------------------------------
+Evidence: agent/llm_agent.py — 6 tools with safeguards
+
+Tools Defined:
+  Tool                          Triggered By
+  get_plan_status               Plan completeness questions
+  get_missing_materials         Missing material queries
+  get_downstream_status         Downstream/propagation questions
+  get_material_rejection_reason Why was X not priced
+  escalate_to_developer         Unknown root cause, system anomaly
+  search_knowledge_base         Policy, rule explanation questions
+
+Correct Tool Selection Demonstrated:
+  Input:  "What is the downstream status of SPRING_LATAM_2024?"
+  Tools:  get_downstream_status → get_material_rejection_reason →
+          search_knowledge_base → escalate_to_developer
+  Output: "Downstreamed: 3 | Pending: 0 | Failed: 2
+           Failed: M-1007 (Polo Shirt M), M-1008 (Canvas Tote Bag)
+           FAILED status requires immediate developer investigation."
+
+Incorrect Tool Call Documented:
+  Input:  "What is the price of material M-1001?"
+  Result: No price tool exists
+  Output: "I'm not able to provide pricing data — I am read-only
+           and pricing values are outside my safety rules." ✅
+           Handled gracefully, correct refusal
+
+Before/After Failure Fix:
+  Failure:    "Sorry, need more steps" — recursion limit hit at MAX_ITERATIONS=10
+  Root Cause: Multi-tool investigation exceeded iteration budget
+  Fix:        Increased MAX_ITERATIONS to 25
+  After:      Full downstream status with explanation returned successfully
+
+--------------------------------------------------------------------------------
+PHASE 6 — Session Memory & Multi-Turn ✅
+--------------------------------------------------------------------------------
+Evidence: agent/memory/session_memory.py
+
+Multi-Turn Test Output (llama-3.3-70b-versatile):
+  Turn 1:
+    Input:  "What is the status of SUMMER_LATAM_V2?"
+    Output: "The status of SUMMER_LATAM_V2 is COMPLETED with 8 out of 10
+             materials priced. The two missing materials are M-1009
+             (Silk Blouse L) and M-1011 (Expired Product A), both due
+             to the EXPIRY_HORIZON_RULE."
+
+Memory Implementation:
+  - Short-term: in-memory list of HumanMessage/AIMessage objects
+  - Long-term: key facts persisted to SQLite (last_plan, last_material)
+  - History trimmed to last 6 messages to prevent context overflow
+  - Memory reset available via 'clear' command
+
+Known Issue:
+  - llama-3.1-8b-instant unreliable for multi-step tool calling
+  - Loop detected on turn 2 with smaller model
+  - Confirmed working correctly with llama-3.3-70b-versatile
+
+--------------------------------------------------------------------------------
+PHASE 7 — Adaptive Behaviour ✅
+--------------------------------------------------------------------------------
+Evidence: agent/feedback/feedback_store.py
+
+Feedback Stored:
+  Session:  active session
+  Query:    "What is the status of SUMMER_LATAM_V2?"
+  Rating:   negative (0)
+  Comment:  "response did not explain what EXPIRY_HORIZON_RULE means"
+
+Feedback Summary Output:
+  === SUMMARY ===
+  {'total': 1, 'positive': 0, 'negative': 1, 'score': '0/1'}
+
+  === ADAPTATION CONTEXT ===
+  ADAPTATION NOTES (based on recent feedback):
+  - Previous query 'What is the status of SUMMER_LATAM_V2?' received
+    negative feedback: response did not explain what EXPIRY_HORIZON_RULE means
+  Apply extra care when handling similar queries. Be more specific,
+  complete, and actionable in your response.
+
+Adaptation Mechanism:
+  - Negative feedback patterns retrieved before each response
+  - Injected as additional context into system prompt
+  - Agent adjusts verbosity and completeness on similar queries
+  - Feedback persisted to SQLite across sessions
+
+--------------------------------------------------------------------------------
+PHASE 8 — FastAPI Deployment Readiness ✅
+--------------------------------------------------------------------------------
+Evidence: api/main.py, api/schemas.py
+
+Server Startup:
+  INFO: Uvicorn running on http://127.0.0.1:8000
+  INFO: Application startup complete.
+
+Health Check:
+  GET /health
+  Response: {"status":"ok","model":"llama-3.3-70b-versatile","version":"1.0.0"}
+
+Chat Request Log:
+  CHAT REQUEST | Session: a20b9287 | Variant: v3 | Message length: 38 chars
+  CHAT RESPONSE | Session: a20b9287 | Latency: 986.36ms
+
+Graceful Error Handling (429 token limit):
+  AGENT ERROR: Error code: 429 - Rate limit reached
+  → Returned 200 with fallback message, did not crash
+  → Log contains no PII — session ID and message length only
+
+Endpoints:
+  GET  /health    — health check
+  POST /chat      — main agent endpoint with session memory
+  POST /feedback  — store interaction feedback
+
+--------------------------------------------------------------------------------
+PHASE 9 — Evaluation Harness ✅
+--------------------------------------------------------------------------------
+Evidence: evaluation/evaluator.py, evaluation/test_cases.json
+
+10 Test Cases Defined:
+  TC001  plan_status        Valid plan status query
+  TC002  missing_materials  Missing materials query
+  TC003  material_rejection Specific material rejection reason
+  TC004  knowledge_base     Rule explanation from RAG
+  TC005  downstream         Downstream status query
+  TC006  safety_refusal     Request to modify data — must be refused
+  TC007  safety_refusal     Request to fabricate policy — must be refused
+  TC008  edge_case          Unknown plan name
+  TC009  escalation         Unresolvable issue triggers escalation
+  TC010  edge_case          Ambiguous query without plan name
+
+Scoring Method:
+  - Keyword matching against expected response content
+  - Pass if >= 50% of expected keywords present in response
+  - Latency captured per test case
+  - Results exported to CSV in evaluation/results/
+
+Note: Full evaluation run pending tonight when Groq quota resets.
+
+--------------------------------------------------------------------------------
+SUMMARY TABLE
+--------------------------------------------------------------------------------
+Phase  Key Evidence                    Failure Documented         Fixed
+1      Problem framing doc             —                          —
+2      Keyword matching, regex         Natural language fails     Phase 3
+3      LLM understands paraphrasing    Faithfulness — user count  Noted
+4      RAG retrieves correct chunks    No RAG = vague answers     RAG added
+5      6 tools, correct routing        Recursion limit too low    MAX_ITER=25
+6      Multi-turn context maintained   Loop on small model        Use 70b model
+7      Feedback stored + adapted       —                          —
+8      API latency + graceful failure  —                          —
+9      10 test cases defined           Full run pending tonight   —
+
+================================================================================
