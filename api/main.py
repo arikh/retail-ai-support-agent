@@ -61,6 +61,7 @@ def get_or_create_session(session_id: str) -> SessionMemory:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint."""
@@ -79,7 +80,7 @@ def chat(request: ChatRequest):
     Maintains session memory across turns.
     """
     session_id = request.session_id or str(uuid.uuid4())[:8]
-    memory     = get_or_create_session(session_id)
+    memory = get_or_create_session(session_id)
 
     logger.info(
         f"CHAT REQUEST | Session: {session_id} | "
@@ -91,7 +92,7 @@ def chat(request: ChatRequest):
     memory.add_user_message(request.message)
 
     # Get recent history excluding current message
-    history        = memory.get_history()[:-1]
+    history = memory.get_history()[:-1]
     recent_history = history[-6:] if len(history) > 6 else history
 
     # Track latency
@@ -99,15 +100,14 @@ def chat(request: ChatRequest):
 
     try:
         response = run_llm_agent(
-            user_input     = request.message,
-            prompt_variant = request.prompt_variant,
-            chat_history   = recent_history,
+            user_input=request.message,
+            prompt_variant=request.prompt_variant,
+            chat_history=recent_history,
         )
     except Exception as e:
         logger.error(f"CHAT ERROR | Session: {session_id} | Error: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail="Agent failed to process request. Please try again."
+            status_code=500, detail="Agent failed to process request. Please try again."
         )
 
     latency_ms = round((time.time() - start_time) * 1000, 2)
@@ -115,15 +115,12 @@ def chat(request: ChatRequest):
     # Add response to memory
     memory.add_ai_message(response)
 
-    logger.info(
-        f"CHAT RESPONSE | Session: {session_id} | "
-        f"Latency: {latency_ms}ms"
-    )
+    logger.info(f"CHAT RESPONSE | Session: {session_id} | Latency: {latency_ms}ms")
 
     return ChatResponse(
-        response   = response,
-        session_id = session_id,
-        latency_ms = latency_ms,
+        response=response,
+        session_id=session_id,
+        latency_ms=latency_ms,
     )
 
 
@@ -135,23 +132,20 @@ def submit_feedback(request: FeedbackRequest):
     """
     try:
         FeedbackStore().store(
-            session_id     = request.session_id,
-            user_query     = request.user_query,
-            agent_response = request.agent_response,
-            rating         = request.rating,
-            comment        = request.comment,
+            session_id=request.session_id,
+            user_query=request.user_query,
+            agent_response=request.agent_response,
+            rating=request.rating,
+            comment=request.comment,
         )
         logger.info(
             f"FEEDBACK | Session: {request.session_id} | "
             f"Rating: {'positive' if request.rating == 1 else 'negative'}"
         )
         return FeedbackResponse(
-            status  = "ok",
-            message = "Feedback recorded successfully.",
+            status="ok",
+            message="Feedback recorded successfully.",
         )
     except Exception as e:
         logger.error(f"FEEDBACK ERROR: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to store feedback."
-        )
+        raise HTTPException(status_code=500, detail="Failed to store feedback.")

@@ -11,7 +11,7 @@ from rag.embeddings import get_embedding_model
 logger = logging.getLogger(__name__)
 
 CHROMA_DB_PATH = "chroma_db"
-TOP_K          = 3
+TOP_K = 3
 
 
 def get_vectorstore() -> Chroma:
@@ -50,6 +50,7 @@ def retrieve_as_text(query: str, k: int = TOP_K) -> str:
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
 
     test_queries = [

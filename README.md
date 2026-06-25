@@ -1,8 +1,77 @@
+# Retail AI Support Agent
+
+Production-grade AI support agent for retail pricing operations — built with LangChain, LangGraph, Groq, ChromaDB, and FastAPI.
+
+## Overview
+
+An AI agent that assists pricing operations teams in resolving plan and material issues. It handles ambiguous queries, retrieves knowledge from a vector store, calls structured tools, maintains session memory, and enforces safety guardrails — all in a multi-turn conversational interface.
+
+**Scenario:** Customer Support — AI Support Resolution Agent (Scenario 3)  
+**Track:** Track A — LangChain + LangGraph
+
+---
+
+## Architecture
+
+```
+User Input
+    │
+    ▼
+FastAPI /chat endpoint
+    │
+    ▼
+Session Memory (short-term + long-term via SQLite)
+    │
+    ▼
+LangGraph ReAct Agent
+    │
+    ├── get_plan_status
+    ├── get_missing_materials
+    ├── get_downstream_status
+    ├── get_material_rejection_reason
+    ├── escalate_to_developer
+    └── search_knowledge_base (RAG → ChromaDB)
+    │
+    ▼
+Feedback Store (adaptive behaviour)
+    │
+    ▼
+Response
+```
+
+---
+
+## Project Structure
+
+```
+retail-ai-support-agent/
+├── agent/
+│   ├── agent.py              # Phase 2: Rule-based baseline agent
+│   ├── llm_agent.py          # Phase 3-6: LangGraph ReAct agent
+│   ├── prompts/              # Phase 3: Prompt variants v1/v2/v3
+│   ├── memory/               # Phase 6: Session memory manager
+│   └── feedback/             # Phase 7: Adaptive feedback store
+├── rag/                      # Phase 4: RAG pipeline
+├── api/                      # Phase 8: FastAPI deployment
+├── evaluation/               # Phase 9: Evaluation harness
+├── data/
+│   ├── pricing.db            # SQLite database
+│   ├── faqs/                 # Knowledge base documents
+│   └── setup_db.py
+├── docs/
+│   ├── deployment.md
+│   ├── demo_script.md
+│   ├── engineering_justification.md
+│   └── evaluation_notes.txt
+└── pyproject.toml
+```
+
 ---
 
 ## Setup
 
 ### Prerequisites
+
 - Python 3.12+
 - uv package manager
 - Groq API key (free tier at console.groq.com)

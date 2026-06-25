@@ -3,6 +3,7 @@ Phase 3: LangChain + Groq powered agent using LangGraph.
 Replaces brittle keyword matching with LLM-based understanding.
 Compatible with LangChain 1.x / LangGraph.
 """
+
 import sys
 import sqlite3
 import logging
@@ -49,6 +50,7 @@ def query_db(sql: str, params: tuple = ()) -> list[dict]:
 
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
+
 @tool
 def get_plan_status(plan_name: str) -> str:
     """
@@ -56,12 +58,15 @@ def get_plan_status(plan_name: str) -> str:
     materials were priced vs total selected.
     Use this when user asks about plan completeness or status.
     """
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT plan_name, region, market, channel, season,
                status, total_materials, priced_materials
         FROM pricing_plans
         WHERE plan_name = ?
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return f"Plan '{plan_name}' not found. Please verify the plan name."
@@ -84,7 +89,8 @@ def get_missing_materials(plan_name: str) -> str:
     along with the rejection reason for each.
     Use this when user asks why materials are missing or not showing up.
     """
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT pm.material_id, m.material_name,
                pm.rejection_reason, m.expiry_months
         FROM plan_materials pm
@@ -92,7 +98,9 @@ def get_missing_materials(plan_name: str) -> str:
         JOIN materials m ON pm.material_id = m.material_id
         WHERE pp.plan_name = ?
         AND pm.price_status = 'NOT_PRICED'
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return f"No missing materials found for plan '{plan_name}'."
@@ -113,19 +121,22 @@ def get_downstream_status(plan_name: str) -> str:
     Get the downstream propagation status for all priced materials in a plan.
     Use this when user asks if prices were sent to client systems or downstreamed.
     """
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT pm.material_id, m.material_name, pm.downstream_status
         FROM plan_materials pm
         JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
         JOIN materials m ON pm.material_id = m.material_id
         WHERE pp.plan_name = ?
         AND pm.price_status = 'PRICED'
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return f"No priced materials found for plan '{plan_name}'."
 
-    failed  = [r for r in rows if r["downstream_status"] == "FAILED"]
+    failed = [r for r in rows if r["downstream_status"] == "FAILED"]
     pending = [r for r in rows if r["downstream_status"] == "PENDING"]
     success = [r for r in rows if r["downstream_status"] == "DOWNSTREAMED"]
 
@@ -152,7 +163,8 @@ def get_material_rejection_reason(material_id: str, plan_name: str = "") -> str:
     or what rule caused a material to be excluded.
     """
     if plan_name:
-        rows = query_db("""
+        rows = query_db(
+            """
             SELECT pm.material_id, m.material_name,
                    pm.price_status, pm.rejection_reason,
                    m.expiry_months, pp.plan_name
@@ -160,9 +172,12 @@ def get_material_rejection_reason(material_id: str, plan_name: str = "") -> str:
             JOIN materials m ON pm.material_id = m.material_id
             JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
             WHERE pm.material_id = ? AND pp.plan_name = ?
-        """, (material_id, plan_name))
+        """,
+            (material_id, plan_name),
+        )
     else:
-        rows = query_db("""
+        rows = query_db(
+            """
             SELECT pm.material_id, m.material_name,
                    pm.price_status, pm.rejection_reason,
                    m.expiry_months, pp.plan_name
@@ -170,7 +185,9 @@ def get_material_rejection_reason(material_id: str, plan_name: str = "") -> str:
             JOIN materials m ON pm.material_id = m.material_id
             JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
             WHERE pm.material_id = ?
-        """, (material_id,))
+        """,
+            (material_id,),
+        )
 
     if not rows:
         return f"Material '{material_id}' not found."
@@ -192,9 +209,7 @@ def get_material_rejection_reason(material_id: str, plan_name: str = "") -> str:
 
 @tool
 def escalate_to_developer(
-    plan_name: str,
-    material_id: str,
-    issue_description: str
+    plan_name: str, material_id: str, issue_description: str
 ) -> str:
     """
     Escalate an unresolved issue to a developer.
@@ -214,6 +229,7 @@ def escalate_to_developer(
         f"A developer will investigate the system logs and database records."
     )
 
+
 @tool
 def search_knowledge_base(query: str) -> str:
     """
@@ -224,12 +240,14 @@ def search_knowledge_base(query: str) -> str:
     """
     import sys
     import os
+
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from rag.retriever import retrieve_as_text
 
     result = retrieve_as_text(query)
     logger.info(f"RAG retrieved context for query: {query}")
     return result
+
 
 # ── Tools list ────────────────────────────────────────────────────────────────
 
@@ -244,6 +262,7 @@ TOOLS = [
 
 
 # ── Agent builder ─────────────────────────────────────────────────────────────
+
 
 def build_agent(system_prompt: str):
     """
@@ -276,8 +295,7 @@ def run_with_safeguards(agent, messages: list, max_iterations: int = 10) -> str:
     """
     try:
         result = agent.invoke(
-            {"messages": messages},
-            config={"recursion_limit": max_iterations}
+            {"messages": messages}, config={"recursion_limit": max_iterations}
         )
         return result["messages"][-1].content
 
@@ -303,10 +321,9 @@ def run_with_safeguards(agent, messages: list, max_iterations: int = 10) -> str:
 
 # ── Run with prompt variant ───────────────────────────────────────────────────
 
+
 def run_llm_agent(
-    user_input: str,
-    prompt_variant: str = "v3",
-    chat_history: list = None
+    user_input: str, prompt_variant: str = "v3", chat_history: list = None
 ) -> str:
     """
     Run the LLM agent with a specific prompt variant.
@@ -318,16 +335,13 @@ def run_llm_agent(
         "v3": DEFAULT_PROMPT,
     }
 
-    
     # Add feedback loop
-    feedback_store  = FeedbackStore()
-    adaptation      = feedback_store.build_adaptation_context()
-    system_prompt   = prompt_map.get(prompt_variant, DEFAULT_PROMPT) + adaptation
-    agent           = build_agent(system_prompt)
+    feedback_store = FeedbackStore()
+    adaptation = feedback_store.build_adaptation_context()
+    system_prompt = prompt_map.get(prompt_variant, DEFAULT_PROMPT) + adaptation
+    agent = build_agent(system_prompt)
 
-    logger.info(
-        f"LLM AGENT | Prompt: {prompt_variant} | Input: {user_input}"
-    )
+    logger.info(f"LLM AGENT | Prompt: {prompt_variant} | Input: {user_input}")
 
     messages = []
     if chat_history:
@@ -341,6 +355,7 @@ def run_llm_agent(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
 
 def main():
     """
@@ -361,8 +376,8 @@ def main():
     print("  'quit'            — exit")
     print()
 
-    session_id      = str(uuid.uuid4())[:8]
-    memory          = SessionMemory(session_id=session_id)
+    session_id = str(uuid.uuid4())[:8]
+    memory = SessionMemory(session_id=session_id)
     current_variant = "v3"
 
     print(f"Session ID: {session_id}")
@@ -402,9 +417,9 @@ def main():
         recent_history = history[-4:] if len(history) > 4 else history
 
         response = run_llm_agent(
-            user_input     = user_input,
-            prompt_variant = current_variant,
-            chat_history   = recent_history,
+            user_input=user_input,
+            prompt_variant=current_variant,
+            chat_history=recent_history,
         )
 
         # Add agent response to memory
@@ -412,28 +427,29 @@ def main():
 
         # Store key entities in long-term memory
         import re
-        plan_match     = re.search(r'\b([A-Z][A-Z0-9_]{5,})\b', user_input)
-        material_match = re.search(r'\bM-\d{4}\b', user_input)
+
+        plan_match = re.search(r"\b([A-Z][A-Z0-9_]{5,})\b", user_input)
+        material_match = re.search(r"\bM-\d{4}\b", user_input)
         if plan_match:
             memory.remember("last_plan", plan_match.group())
         if material_match:
             memory.remember("last_material", material_match.group())
 
-        
         print(f"\nAgent: {response}\n")
 
         # Collect feedback
         feedback_input = input("Feedback? [y/n/skip]: ").strip().lower()
         if feedback_input in ["y", "n"]:
-            rating  = 1 if feedback_input == "y" else 0
+            rating = 1 if feedback_input == "y" else 0
             comment = input("Comment (optional, press Enter to skip): ").strip()
             from agent.feedback.feedback_store import FeedbackStore
+
             FeedbackStore().store(
-                session_id     = session_id,
-                user_query     = user_input,
-                agent_response = response,
-                rating         = rating,
-                comment        = comment,
+                session_id=session_id,
+                user_query=user_input,
+                agent_response=response,
+                rating=rating,
+                comment=comment,
             )
             print(f"Feedback recorded.\n")
         print("-" * 60)

@@ -26,8 +26,8 @@ class SessionMemory:
     """
 
     def __init__(self, session_id: str, max_history: int = 10):
-        self.session_id   = session_id
-        self.max_history  = max_history
+        self.session_id = session_id
+        self.max_history = max_history
         self.messages: list[BaseMessage] = []
         self._ensure_tables()
         self._load_long_term_memory()
@@ -81,7 +81,7 @@ class SessionMemory:
     def _trim_history(self) -> None:
         """Keep only the last N message pairs to avoid context overflow."""
         if len(self.messages) > self.max_history * 2:
-            self.messages = self.messages[-(self.max_history * 2):]
+            self.messages = self.messages[-(self.max_history * 2) :]
             logger.info(f"Memory trimmed to {self.max_history} pairs")
 
     def clear_session(self) -> None:
@@ -99,13 +99,16 @@ class SessionMemory:
         """
         conn = sqlite3.connect(DATABASE_PATH)
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO long_term_memory
                     (session_id, key, value, created_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(session_id, key)
                 DO UPDATE SET value=excluded.value, created_at=excluded.created_at
-            """, (self.session_id, key, value, datetime.now().isoformat()))
+            """,
+                (self.session_id, key, value, datetime.now().isoformat()),
+            )
             conn.commit()
             logger.info(f"Long-term memory stored: {key}={value}")
         finally:
@@ -115,10 +118,13 @@ class SessionMemory:
         """Retrieve a fact from long-term memory."""
         conn = sqlite3.connect(DATABASE_PATH)
         try:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT value FROM long_term_memory
                 WHERE session_id = ? AND key = ?
-            """, (self.session_id, key))
+            """,
+                (self.session_id, key),
+            )
             row = cursor.fetchone()
             return row[0] if row else None
         finally:
@@ -128,12 +134,15 @@ class SessionMemory:
         """Load long-term memory summary into context at session start."""
         conn = sqlite3.connect(DATABASE_PATH)
         try:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT key, value FROM long_term_memory
                 WHERE session_id = ?
                 ORDER BY created_at DESC
                 LIMIT 5
-            """, (self.session_id,))
+            """,
+                (self.session_id,),
+            )
             rows = cursor.fetchall()
             if rows:
                 context = "Previously remembered context:\n"
@@ -149,7 +158,7 @@ class SessionMemory:
     def get_memory_summary(self) -> dict:
         """Return summary of current memory state."""
         return {
-            "session_id":     self.session_id,
-            "message_count":  len(self.messages),
-            "max_history":    self.max_history,
+            "session_id": self.session_id,
+            "message_count": len(self.messages),
+            "max_history": self.max_history,
         }

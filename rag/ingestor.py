@@ -13,7 +13,7 @@ from rag.embeddings import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
-FAQ_DIR        = "data/faqs"
+FAQ_DIR = "data/faqs"
 CHROMA_DB_PATH = "chroma_db"
 
 
@@ -53,9 +53,7 @@ def ingest_documents() -> int:
         persist_directory=CHROMA_DB_PATH,
     )
 
-    logger.info(
-        f"Stored {len(chunks)} chunks in ChromaDB at {CHROMA_DB_PATH}"
-    )
+    logger.info(f"Stored {len(chunks)} chunks in ChromaDB at {CHROMA_DB_PATH}")
     return len(chunks)
 
 

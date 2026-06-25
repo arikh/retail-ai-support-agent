@@ -59,18 +59,21 @@ class FeedbackStore:
         """
         conn = sqlite3.connect(DATABASE_PATH)
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO interaction_feedback
                     (session_id, user_query, agent_response, rating, comment, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                session_id,
-                user_query,
-                agent_response,
-                rating,
-                comment,
-                datetime.now().isoformat(),
-            ))
+            """,
+                (
+                    session_id,
+                    user_query,
+                    agent_response,
+                    rating,
+                    comment,
+                    datetime.now().isoformat(),
+                ),
+            )
             conn.commit()
             logger.info(
                 f"Feedback stored | Session: {session_id} | "
@@ -89,13 +92,16 @@ class FeedbackStore:
         conn = sqlite3.connect(DATABASE_PATH)
         conn.row_factory = sqlite3.Row
         try:
-            cursor = conn.execute("""
+            cursor = conn.execute(
+                """
                 SELECT user_query, agent_response, comment, created_at
                 FROM interaction_feedback
                 WHERE rating = 0
                 ORDER BY created_at DESC
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             return [dict(row) for row in cursor.fetchall()]
         finally:
             conn.close()
@@ -112,14 +118,14 @@ class FeedbackStore:
                 FROM interaction_feedback
             """)
             row = cursor.fetchone()
-            total    = row[0] or 0
+            total = row[0] or 0
             positive = row[1] or 0
             negative = row[2] or 0
             return {
-                "total":    total,
+                "total": total,
                 "positive": positive,
                 "negative": negative,
-                "score":    f"{positive}/{total}" if total > 0 else "0/0",
+                "score": f"{positive}/{total}" if total > 0 else "0/0",
             }
         finally:
             conn.close()

@@ -1,7 +1,7 @@
 [project]
 name = "retail-ai-support-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "Production-grade AI support agent for retail pricing operations — LangChain, LangGraph, RAG, tool calling, memory, and safety enforcement"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -21,4 +21,9 @@ dependencies = [
     "sentence-transformers>=5.6.0",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.49.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.19",
 ]

@@ -18,10 +18,7 @@ os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[
-        logging.FileHandler("logs/agent.log"),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler("logs/agent.log"), logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
 
@@ -30,11 +27,20 @@ logger = logging.getLogger(__name__)
 DATABASE_PATH = "data/pricing.db"
 
 UNSAFE_KEYWORDS = [
-    "delete", "update", "modify", "change", "edit",
-    "approve", "trigger", "run", "execute", "insert"
+    "delete",
+    "update",
+    "modify",
+    "change",
+    "edit",
+    "approve",
+    "trigger",
+    "run",
+    "execute",
+    "insert",
 ]
 
 # ── Database helper ───────────────────────────────────────────────────────────
+
 
 def query_db(sql: str, params: tuple = ()) -> list[dict]:
     """Execute a read-only query and return results as list of dicts."""
@@ -48,14 +54,18 @@ def query_db(sql: str, params: tuple = ()) -> list[dict]:
     finally:
         conn.close()
 
+
 # ── Safety check ──────────────────────────────────────────────────────────────
+
 
 def is_unsafe_request(user_input: str) -> bool:
     """Check if user is asking agent to modify data."""
     lowered = user_input.lower()
     return any(keyword in lowered for keyword in UNSAFE_KEYWORDS)
 
+
 # ── Intent detection ──────────────────────────────────────────────────────────
+
 
 def detect_intent(user_input: str) -> str:
     """
@@ -70,7 +80,9 @@ def detect_intent(user_input: str) -> str:
     if any(w in lowered for w in ["missing", "not showing", "excluded", "where are"]):
         return "missing_materials"
 
-    if any(w in lowered for w in ["downstream", "propagated", "sent to client", "failed"]):
+    if any(
+        w in lowered for w in ["downstream", "propagated", "sent to client", "failed"]
+    ):
         return "downstream_status"
 
     if any(w in lowered for w in ["why", "reason", "rule", "rejected"]):
@@ -81,7 +93,9 @@ def detect_intent(user_input: str) -> str:
 
     return "unknown"
 
+
 # ── Entity extraction ─────────────────────────────────────────────────────────
+
 
 def extract_plan_name(user_input: str) -> str | None:
     """
@@ -91,11 +105,12 @@ def extract_plan_name(user_input: str) -> str | None:
     LIMITATION: Only works if user types exact plan name.
     Cannot handle 'my summer plan' or 'the LATAM plan'.
     """
-    pattern = r'\b([A-Z][A-Z0-9_]{3,})\b'
+    pattern = r"\b([A-Z][A-Z0-9_]{3,})\b"
     matches = re.findall(pattern, user_input)
     if matches:
         return matches[0]
     return None
+
 
 def extract_material_id(user_input: str) -> str | None:
     """
@@ -104,24 +119,29 @@ def extract_material_id(user_input: str) -> str | None:
 
     LIMITATION: Only works with exact M-XXXX format.
     """
-    pattern = r'\bM-\d{4}\b'
+    pattern = r"\bM-\d{4}\b"
     match = re.search(pattern, user_input)
     if match:
         return match.group()
     return None
 
+
 # ── Response handlers ─────────────────────────────────────────────────────────
+
 
 def handle_missing_materials(plan_name: str) -> str:
     """Query and return missing materials for a plan."""
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT pm.material_id, pm.rejection_reason, m.material_name
         FROM plan_materials pm
         JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
         JOIN materials m ON pm.material_id = m.material_id
         WHERE pp.plan_name = ?
         AND pm.price_status = 'NOT_PRICED'
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return (
@@ -134,8 +154,7 @@ def handle_missing_materials(plan_name: str) -> str:
     for row in rows:
         reason = row["rejection_reason"] or "Unknown"
         lines.append(
-            f"  • {row['material_id']} ({row['material_name']}) "
-            f"— Reason: {reason}"
+            f"  • {row['material_id']} ({row['material_name']}) — Reason: {reason}"
         )
 
     lines.append(
@@ -148,14 +167,17 @@ def handle_missing_materials(plan_name: str) -> str:
 
 def handle_downstream_status(plan_name: str) -> str:
     """Query and return downstream status for a plan."""
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT pm.material_id, pm.downstream_status, m.material_name
         FROM plan_materials pm
         JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
         JOIN materials m ON pm.material_id = m.material_id
         WHERE pp.plan_name = ?
         AND pm.price_status = 'PRICED'
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return f"No priced materials found for plan '{plan_name}'."
@@ -179,12 +201,15 @@ def handle_downstream_status(plan_name: str) -> str:
 
 def handle_plan_status(plan_name: str) -> str:
     """Query and return overall plan status."""
-    rows = query_db("""
+    rows = query_db(
+        """
         SELECT plan_name, region, market, channel, season,
                status, total_materials, priced_materials
         FROM pricing_plans
         WHERE plan_name = ?
-    """, (plan_name,))
+    """,
+        (plan_name,),
+    )
 
     if not rows:
         return (
@@ -209,7 +234,8 @@ def handle_plan_status(plan_name: str) -> str:
 def handle_rejection_reason(material_id: str, plan_name: str | None) -> str:
     """Query rejection reason for a specific material."""
     if plan_name:
-        rows = query_db("""
+        rows = query_db(
+            """
             SELECT pm.rejection_reason, pm.price_status,
                    m.material_name, m.expiry_months,
                    pp.plan_name
@@ -218,9 +244,12 @@ def handle_rejection_reason(material_id: str, plan_name: str | None) -> str:
             JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
             WHERE pm.material_id = ?
             AND pp.plan_name = ?
-        """, (material_id, plan_name))
+        """,
+            (material_id, plan_name),
+        )
     else:
-        rows = query_db("""
+        rows = query_db(
+            """
             SELECT pm.rejection_reason, pm.price_status,
                    m.material_name, m.expiry_months,
                    pp.plan_name
@@ -228,13 +257,12 @@ def handle_rejection_reason(material_id: str, plan_name: str | None) -> str:
             JOIN materials m ON pm.material_id = m.material_id
             JOIN pricing_plans pp ON pm.plan_id = pp.plan_id
             WHERE pm.material_id = ?
-        """, (material_id,))
+        """,
+            (material_id,),
+        )
 
     if not rows:
-        return (
-            f"Material '{material_id}' not found. "
-            f"Please verify the material ID."
-        )
+        return f"Material '{material_id}' not found. Please verify the material ID."
 
     r = rows[0]
     if r["price_status"] == "PRICED":
@@ -251,7 +279,9 @@ def handle_rejection_reason(material_id: str, plan_name: str | None) -> str:
         f"  Expiry Months:   {r['expiry_months']}"
     )
 
+
 # ── Safety refusal ────────────────────────────────────────────────────────────
+
 
 def handle_unsafe_request() -> str:
     """Return safety refusal message."""
@@ -262,7 +292,9 @@ def handle_unsafe_request() -> str:
         "Please contact your system administrator for data modifications."
     )
 
+
 # ── Unknown intent ────────────────────────────────────────────────────────────
+
 
 def handle_unknown() -> str:
     """Return fallback message for unrecognised intent."""
@@ -276,7 +308,9 @@ def handle_unknown() -> str:
         "or material ID (e.g. M-1001) in your question."
     )
 
+
 # ── Main agent function ───────────────────────────────────────────────────────
+
 
 def run_agent(user_input: str) -> str:
     """
@@ -293,15 +327,11 @@ def run_agent(user_input: str) -> str:
         return response
 
     # Extract entities
-    plan_name    = extract_plan_name(user_input)
-    material_id  = extract_material_id(user_input)
-    intent       = detect_intent(user_input)
+    plan_name = extract_plan_name(user_input)
+    material_id = extract_material_id(user_input)
+    intent = detect_intent(user_input)
 
-    logger.info(
-        f"INTENT: {intent} | "
-        f"PLAN: {plan_name} | "
-        f"MATERIAL: {material_id}"
-    )
+    logger.info(f"INTENT: {intent} | PLAN: {plan_name} | MATERIAL: {material_id}")
 
     # Route to handler
     if intent == "missing_materials" and plan_name:
@@ -326,7 +356,9 @@ def run_agent(user_input: str) -> str:
     logger.info(f"AGENT RESPONSE: {response}\n")
     return response
 
+
 # ── CLI loop ──────────────────────────────────────────────────────────────────
+
 
 def main():
     """Interactive CLI for testing the baseline agent."""
