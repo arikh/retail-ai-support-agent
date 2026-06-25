@@ -15,29 +15,30 @@ Built as a production-grade capstone across 9 engineering phases: from a rule-ba
 ## Architecture
 
 ```
-User Input
-    │
-    ▼
-FastAPI /chat endpoint
-    │
-    ▼
-Session Memory (short-term + long-term via SQLite)
-    │
-    ▼
-LangGraph ReAct Agent
-    │
-    ├── get_plan_status
-    ├── get_missing_materials
-    ├── get_downstream_status
-    ├── get_material_rejection_reason
-    ├── escalate_to_developer
-    └── search_knowledge_base (RAG → ChromaDB)
-    │
-    ▼
-Feedback Store (adaptive behaviour)
-    │
-    ▼
-Response
+Client (CLI or API)
+        │
+        ▼
+   FastAPI /chat
+        │
+        ▼
+  Session Memory
+  (SQLite + in-memory)
+        │
+        ▼
+  LangGraph ReAct
+        │
+   ┌────┴────────────────┐
+   ▼                     ▼
+Tools                Knowledge
+   │                     │
+   ├── get_plan_status    ▼
+   ├── get_missing    ChromaDB
+   ├── get_downstream     │
+   ├── get_rejection  HuggingFace
+   └── escalate       Embeddings
+                          │
+                     Feedback Store
+                      (SQLite)
 ```
 
 ---
@@ -145,13 +146,29 @@ uv run python -m evaluation.evaluator
 
 ---
 
+## Design Decisions
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Agent framework | LangGraph ReAct | Multi-step tool chaining requires dynamic reasoning loops, not static chains |
+| LLM provider | Groq + llama-3.3-70b-versatile | Fastest inference latency for open-weight models, strong tool calling at zero cost |
+| Vector store | ChromaDB | Persists to disk out of the box, no serialisation logic, native LangChain integration |
+| Embeddings | HuggingFace all-MiniLM-L6-v2 | Local inference, no API cost, no external dependency for a small FAQ corpus |
+| Database | SQLite | Zero infrastructure overhead, handles pricing data, memory, and feedback in one file |
+| API layer | FastAPI | Async, automatic OpenAPI docs, Pydantic validation, production-ready with minimal boilerplate |
+| Adaptation | Prompt injection | Explainable behaviour change without fine-tuning — suitable for a prototype feedback loop |
+
+**Key tradeoff:** SQLite and ChromaDB are correct for single-instance deployment. A production upgrade would replace both — PostgreSQL for structured data, a managed vector store for retrieval.
+
+---
+
 ## Environment Variables
 
 | Variable | Description | Default |
 |---|---|---|
 | GROQ_API_KEY | Groq API key | Required |
 | LLM_MODEL | Model name | llama-3.3-70b-versatile |
-| MAX_ITERATIONS | Agent loop limit | 15 |
+| MAX_ITERATIONS | Agent loop limit | 25 |
 
 ---
 
@@ -164,3 +181,26 @@ uv run python -m evaluation.evaluator
 - **SQLite** — structured data + memory + feedback persistence
 - **FastAPI** — REST API deployment
 - **uv** — dependency management
+
+---
+
+## Roadmap
+
+| Status | Capability |
+|---|---|
+| ✅ | Rule-based baseline agent |
+| ✅ | LLM integration with prompt variants |
+| ✅ | RAG pipeline with ChromaDB |
+| ✅ | Structured tool calling with safeguards |
+| ✅ | Session memory (short-term + long-term) |
+| ✅ | Adaptive behaviour from feedback |
+| ✅ | FastAPI deployment with latency tracking |
+| ✅ | Evaluation harness with 10 test cases |
+| ⬜ | Human-in-the-loop review for escalations |
+| ⬜ | Multi-agent planner for complex workflows |
+| ⬜ | Observability with LangSmith or Langfuse |
+| ⬜ | Evaluation dashboard with pass/fail trends |
+| ⬜ | PostgreSQL for production data persistence |
+| ⬜ | Redis for distributed session memory |
+| ⬜ | Authentication middleware for API |
+| ⬜ | Containerised deployment with Docker |
