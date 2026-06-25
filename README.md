@@ -1,13 +1,14 @@
 # Retail AI Support Agent
 
-Production-grade AI support agent for retail pricing operations — built with LangChain, LangGraph, Groq, ChromaDB, and FastAPI.
+Retail pricing operations teams receive hundreds of repetitive support requests every day — why are materials missing from a plan, what rule caused an exclusion, did prices propagate downstream. These questions are time-consuming to investigate manually, buried across multiple systems, and rarely documented consistently.
 
-## Overview
+This project demonstrates how an enterprise AI support agent can combine retrieval-augmented generation, structured tool calling, conversational memory, and adaptive feedback to answer these requests safely, consistently, and at scale — without modifying any underlying data.
 
-An AI agent that assists pricing operations teams in resolving plan and material issues. It handles ambiguous queries, retrieves knowledge from a vector store, calls structured tools, maintains session memory, and enforces safety guardrails — all in a multi-turn conversational interface.
+Built as a production-grade capstone across 9 engineering phases: from a rule-based baseline through LLM integration, RAG, tool calling, session memory, adaptive behaviour, and FastAPI deployment.
 
 **Scenario:** Customer Support — AI Support Resolution Agent (Scenario 3)  
-**Track:** Track A — LangChain + LangGraph
+**Track:** Track A — LangChain + LangGraph  
+**Stack:** Python, LangChain, LangGraph, Groq, ChromaDB, HuggingFace, SQLite, FastAPI, uv
 
 ---
 
