@@ -10,6 +10,7 @@ import logging
 import os
 import csv
 from datetime import datetime
+import time as time_module
 
 sys_path_fix = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys
@@ -63,6 +64,7 @@ def run_evaluation() -> list[dict]:
     for tc in test_cases:
         print(f"Running {tc['id']} — {tc['description']}...")
 
+        time_module.sleep(10)  # avoid rate limiting between cases
         start_time = time.time()
         try:
             response = run_llm_agent(
