@@ -15,6 +15,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 from agent.feedback.feedback_store import FeedbackStore
+from langchain_openai import ChatOpenAI
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -271,9 +272,15 @@ def build_agent(system_prompt: str):
     - handle_parsing_errors prevents crashes on malformed LLM output
     """
 
-    llm = ChatGroq(
-        model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
-        api_key=os.getenv("GROQ_API_KEY"),
+    # llm = ChatGroq(
+    #     model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
+    #     api_key=os.getenv("GROQ_API_KEY"),
+    #     temperature=0,
+    # )
+    llm = ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "gpt-3.5-turbo"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("OPENAI_BASE_URL"),
         temperature=0,
     )
 
