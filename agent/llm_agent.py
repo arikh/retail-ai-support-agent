@@ -13,6 +13,7 @@ from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
+from agent.feedback.feedback_store import FeedbackStore
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -317,8 +318,12 @@ def run_llm_agent(
         "v3": DEFAULT_PROMPT,
     }
 
-    system_prompt = prompt_map.get(prompt_variant, DEFAULT_PROMPT)
-    agent         = build_agent(system_prompt)
+    
+    # Add feedback loop
+    feedback_store  = FeedbackStore()
+    adaptation      = feedback_store.build_adaptation_context()
+    system_prompt   = prompt_map.get(prompt_variant, DEFAULT_PROMPT) + adaptation
+    agent           = build_agent(system_prompt)
 
     logger.info(
         f"LLM AGENT | Prompt: {prompt_variant} | Input: {user_input}"
@@ -414,7 +419,23 @@ def main():
         if material_match:
             memory.remember("last_material", material_match.group())
 
+        
         print(f"\nAgent: {response}\n")
+
+        # Collect feedback
+        feedback_input = input("Feedback? [y/n/skip]: ").strip().lower()
+        if feedback_input in ["y", "n"]:
+            rating  = 1 if feedback_input == "y" else 0
+            comment = input("Comment (optional, press Enter to skip): ").strip()
+            from agent.feedback.feedback_store import FeedbackStore
+            FeedbackStore().store(
+                session_id     = session_id,
+                user_query     = user_input,
+                agent_response = response,
+                rating         = rating,
+                comment        = comment,
+            )
+            print(f"Feedback recorded.\n")
         print("-" * 60)
 
 

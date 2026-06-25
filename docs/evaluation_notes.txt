@@ -1,0 +1,12 @@
+Evidence 1 — Feedback stored (the output you just got):
+=== SUMMARY ===
+{'total': 1, 'positive': 0, 'negative': 1, 'score': '0/1'}
+
+=== ADAPTATION CONTEXT ===
+ADAPTATION NOTES (based on recent feedback):
+- Previous query 'What is the status of SUMMER_LATAM_V2?' received negative feedback: response did not explain what EXPIRY_HORIZON_RULE means
+Apply extra care when handling similar queries. Be more specific, complete, and actionable in your response.
+Evidence 2 — Before response (already captured):
+Agent: The status of SUMMER_LATAM_V2 is COMPLETED with 8 out of 10 
+materials priced. The two missing materials are M-1009 (Silk Blouse L) 
+and M-1011 (Expired Product A), both due to the EXPIRY_HORIZON_RULE.
