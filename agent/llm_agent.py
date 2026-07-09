@@ -11,11 +11,9 @@ import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 from agent.feedback.feedback_store import FeedbackStore
-from langchain_openai import ChatOpenAI
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -34,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 # ── Database helper ───────────────────────────────────────────────────────────
 
-DATABASE_PATH = "data/pricing.db"
-
+DATABASE_PATH = os.getenv("DATABASE_PATH")
 
 def query_db(sql: str, params: tuple = ()) -> list[dict]:
     """Execute a read-only query and return results as list of dicts."""
@@ -272,15 +269,9 @@ def build_agent(system_prompt: str):
     - handle_parsing_errors prevents crashes on malformed LLM output
     """
 
-    # llm = ChatGroq(
-    #     model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
-    #     api_key=os.getenv("GROQ_API_KEY"),
-    #     temperature=0,
-    # )
-    llm = ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "gpt-3.5-turbo"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL"),
+    llm = ChatGroq(
+        model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
+        api_key=os.getenv("GROQ_API_KEY"),
         temperature=0,
     )
 
@@ -458,7 +449,7 @@ def main():
                 rating=rating,
                 comment=comment,
             )
-            print(f"Feedback recorded.\n")
+            print("Feedback recorded.\n")
         print("-" * 60)
 
 
