@@ -4,7 +4,7 @@ Retail pricing operations teams receive hundreds of repetitive support requests 
 
 This project demonstrates how an enterprise AI support agent can combine retrieval-augmented generation, structured tool calling, conversational memory, and adaptive feedback to answer these requests safely, consistently, and at scale — without modifying any underlying data.
 
-Built as a production-grade capstone across 9 engineering phases: from a rule-based baseline through LLM integration, RAG, tool calling, session memory, adaptive behaviour, and FastAPI deployment.
+Enterprise reference implementation of a retail support agent demonstrating modern LLM application architecture, including grounded retrieval (RAG), structured tool calling, conversational memory, safety guardrails, evaluation, and FastAPI deployment.
 
 **Scenario:** Customer Support — AI Support Resolution Agent (Scenario 3)  
 **Track:** Track A — LangChain + LangGraph  
